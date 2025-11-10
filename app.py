@@ -123,11 +123,14 @@ def farmer_dashboard():
     if my_farms:
         farm_options = {farm['farm_name']: farm['id'] for farm in my_farms}
         selected_farm_name = st.selectbox("เลือกฟาร์ม", options=farm_options.keys())
+        varieties_data = supabase.table('varieties').select('id, name').order('name').execute().data
+        variety_options = {v['name']: v['id'] for v in varieties_data}
 
         with st.form("add_harvest_form", clear_on_submit=True):
             harvest_date = st.date_input("วันที่เก็บเกี่ยว")
             cherry_weight = st.number_input("น้ำหนักกาแฟเชอรี่ (กก.)", min_value=0.0, format="%.2f")
-            variety = st.text_input("สายพันธุ์")
+            #variety = st.text_input("สายพันธุ์")
+            selected_variety_name = st.selectbox("สายพันธุ์", options=variety_options.keys())
             harvester_name = st.text_input("ชื่อผู้เก็บเกี่ยว")
             if st.form_submit_button("บันทึกข้อมูล"):
                 farm_id = farm_options[selected_farm_name]
@@ -135,7 +138,7 @@ def farmer_dashboard():
                     "farm_id": farm_id,
                     "harvest_date": str(harvest_date),
                     "cherry_weight_kg": cherry_weight,
-                    "variety": variety,
+                    "variety_id": selected_variety_id, # <-- แก้ไขตรงนี้
                     "harvester_name": harvester_name
                 }).execute()
                 st.success("บันทึกข้อมูลการเก็บเกี่ยวเรียบร้อย!")
