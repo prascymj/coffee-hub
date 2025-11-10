@@ -6,69 +6,30 @@ import pandas as pd
 from datetime import datetime
 
 # --- การตั้งค่าหน้าจอและ Supabase ---
-st.set_page_config(layout="wide", page_title="The Coffee Lab", initial_sidebar_state="expanded")
+st.set_page_config(layout="wide", page_title="The Coffee Lab")
 
-# --- Custom CSS เพื่อความสวยงาม ---
-st.markdown("""
-<style>
-    /* Main container styling */
-    .main .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-        padding-left: 5rem;
-        padding-right: 5rem;
-    }
-    /* Metric card styling */
-    [data-testid="stMetric"] {
-        background-color: #FFFFFF;
-        border: 1px solid #E0E0E0;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    [data-testid="stMetricLabel"] {
-        font-size: 16px;
-        font-weight: 500;
-        color: #555555;
-    }
-    [data-testid="stMetricValue"] {
-        font-size: 36px;
-        font-weight: 700;
-    }
-    /* Custom container for feedback */
-    .feedback-card {
-        background-color: #FFFFFF;
-        border: 1px solid #E0E0E0;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-</style>
-""", unsafe_allow_html=True)
-
-
-# --- การเชื่อมต่อ Supabase ---
-try:
+# ตรวจสอบว่า Secrets ถูกตั้งค่าใน Streamlit Cloud หรือ .streamlit/secrets.toml
+if "SUPABASE_URL" in st.secrets and "SUPABASE_KEY" in st.secrets:
     url: str = st.secrets["SUPABASE_URL"]
     key: str = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(url, key)
-except KeyError:
+else:
     st.error("กรุณาตั้งค่า Supabase URL และ Key ใน Streamlit Secrets")
     st.stop()
 
+st.title("The Coffee Lab ☕")
+st.markdown("แพลตฟอร์มจัดการและติดตามข้อมูลกาแฟครบวงจร")
 
-# --- FUNCTIONS --- (Login and Admin Dashboard remain the same)
+# --- FUNCTIONS ---
 
 def login_form():
-    st.title("The Coffee Lab ☕")
-    st.markdown("แพลตฟอร์มจัดการและติดตามข้อมูลกาแฟครบวงจร")
     st.header("เข้าสู่ระบบ")
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
         with st.form("login_form"):
             email = st.text_input("อีเมล")
             password = st.text_input("รหัสผ่าน", type="password")
-            submitted = st.form_submit_button("เข้าสู่ระบบ", use_container_width=True, type="primary")
+            submitted = st.form_submit_button("เข้าสู่ระบบ", use_container_width=True)
             if submitted:
                 try:
                     user = supabase.auth.sign_in_with_password({"email": email, "password": password})
@@ -80,126 +41,184 @@ def login_form():
                         st.rerun()
                     else:
                         st.error(f"ไม่พบข้อมูลโปรไฟล์สำหรับผู้ใช้ ID: {user.user.id}")
-                except Exception:
+                except Exception as e:
                     st.error("อีเมลหรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง")
 
 def admin_dashboard():
-    st.header(f"Admin Dashboard: {st.session_state.get('full_name', 'N/A')}")
-    # ... (โค้ดส่วน Admin เหมือนเดิม) ...
+    # (โค้ด admin_dashboard เหมือนเดิม)
+    st.header(f"หน้าสำหรับผู้ดูแลระบบ: {st.session_state.get('full_name', 'N/A')}")
+    st.subheader("จัดการผู้ใช้งาน (เกษตรกร)")
+    with st.expander("➕ เพิ่มเกษตรกรรายใหม่"):
+        with st.form("add_farmer_form", clear_on_submit=True):
+            email = st.text_input("อีเมลของเกษตรกร")
+            password = st.text_input("รหัสผ่านเริ่มต้น", type="password")
+            full_name = st.text_input("ชื่อ-นามสกุล")
+            if st.form_submit_button("เพิ่มเกษตรกร"):
+                try:
+                    response = supabase.auth.sign_up({"email": email, "password": password})
+                    new_user_id = response.user.id
+                    if full_name:
+                        supabase.table('profiles').update({'full_name': full_name}).eq('id', new_user_id).execute()
+                    st.success(f"เพิ่มเกษตรกร '{full_name or email}' เรียบร้อยแล้ว!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"เกิดข้อผิดพลาด: {e}")
 
+    st.subheader("รายชื่อเกษตรกรในระบบ")
+    response = supabase.from_('profiles_with_email').select('*').eq('role', 'FARMER').execute()
+    if response.data:
+        df_farmers = pd.DataFrame(response.data)
+        st.dataframe(df_farmers, use_container_width=True)
+    else:
+        st.info("ยังไม่มีข้อมูลเกษตรกรในระบบ")
 def farmer_dashboard():
     try:
         user_id = st.session_state.user.user.id
     except (AttributeError, KeyError):
         st.error("เกิดข้อผิดพลาดในการโหลดข้อมูลผู้ใช้ กรุณาล็อกอินใหม่อีกครั้ง")
         st.stop()
-    
-    # --- Sidebar ---
-    with st.sidebar:
-        st.image("https://i.imgur.com/4kprhNc.png", width=70)
-        st.title("Coffee Lab")
-        st.markdown(f"**ผู้ใช้:** {st.session_state.get('full_name', 'N/A')}")
-        
-        page = st.radio("เมนู", ["Farmer Dashboard", "GAP Helper", "Data Hub"], label_visibility="collapsed")
-        
-        if st.button("ออกจากระบบ"):
-            st.session_state.clear()
-            st.rerun()
 
-    # --- Header ---
-    st.header("Farmer Dashboard")
-    st.markdown("Your command center for farm and harvest management.")
-
-    # --- Fetch Data ---
     my_farms = supabase.table('farms').select('*').eq('owner_id', user_id).execute().data
     
-    # --- Metrics Cards ---
-    # หมายเหตุ: ข้อมูล metric เป็นข้อมูลสมมติเพื่อการแสดงผล
-    total_harvests = 2 
-    total_weight = 450
-    lots_in_processing = 1
-    ready_for_processing = 1
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Total Harvest Lots", total_harvests)
-    with col2:
-        st.metric("Total Weight (kg)", total_weight)
-    with col3:
-        st.metric("Lots in Processing", lots_in_processing)
-    with col4:
-        st.metric("Ready for Processing", ready_for_processing)
-    
-    st.markdown("---")
-
-    # --- Quality Feedback Card ---
-    st.subheader("Quality Feedback")
-    st.markdown("Here are the latest cupping results for your top-performing lots.")
-    
-    # สร้าง feedback card ด้วย st.container และ class ที่เรากำหนดใน CSS
-    with st.container():
-        st.markdown('<div class="feedback-card">', unsafe_allow_html=True)
-        fb_col1, fb_col2 = st.columns([4, 1])
-        with fb_col1:
-            st.markdown("**Lot HL001** - Geisha")
-        with fb_col2:
-            st.markdown("<p style='text-align: right; font-size: 24px; font-weight: bold; color: #007bff;'>89.25</p>", unsafe_allow_html=True)
-            st.markdown("<p style='text-align: right; color: #555;'>Final Score</p>", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    st.markdown("---")
-
-    # --- Input Forms ---
-    form_col1, form_col2 = st.columns(2)
-    with form_col1:
-        st.subheader("Register New Farm")
-        with st.form("add_farm_form", clear_on_submit=True):
-            farm_name = st.text_input("Farmer Name", label_visibility="collapsed", placeholder="Farmer Name")
-            location = st.text_input("Farm Location / Plot", label_visibility="collapsed", placeholder="Farm Location / Plot")
-            if st.form_submit_button("＋ Register Farm", use_container_width=True, type="primary"):
+    # --- Flow 1: First-Time Login ---
+    if not my_farms:
+        st.balloons()
+        st.info("ยินดีต้อนรับ! มาเริ่มต้นด้วยการสร้างฟาร์มแรกของคุณกัน")
+        with st.form("add_first_farm_form", clear_on_submit=True):
+            farm_name = st.text_input("ชื่อฟาร์มของคุณ")
+            location = st.text_input("ที่ตั้ง (อำเภอ, จังหวัด)")
+            if st.form_submit_button("➕ สร้างฟาร์ม", use_container_width=True, type="primary"):
                 supabase.table('farms').insert({"farm_name": farm_name, "location": location, "owner_id": user_id}).execute()
-                st.success(f"เพิ่มฟาร์ม '{farm_name}' สำเร็จ!")
+                st.success(f"สร้างฟาร์ม '{farm_name}' สำเร็จ!")
                 st.rerun()
-    
-    with form_col2:
-        st.subheader("Register New Harvest Lot")
-        with st.form("add_harvest_form", clear_on_submit=True):
-            if my_farms:
-                farm_options = {farm['farm_name']: farm['id'] for farm in my_farms}
-                selected_farm_name = st.selectbox("Select a farm...", options=farm_options.keys(), label_visibility="collapsed")
-            else:
-                st.selectbox("Select a farm...", options=["Please register a farm first"], disabled=True, label_visibility="collapsed")
+        return
 
-            hc1, hc2 = st.columns(2)
-            variety = hc1.text_input("Cherry Variety", label_visibility="collapsed", placeholder="Cherry Variety")
-            weight = hc2.text_input("Weight (kg)", label_visibility="collapsed", placeholder="Weight (kg)")
-            
-            if st.form_submit_button("＋ Submit Lot", use_container_width=True, type="primary"):
-                # (ใส่โค้ด INSERT harvest lot ที่นี่)
-                st.success("บันทึกข้อมูลการเก็บเกี่ยวเรียบร้อย!")
+    # --- Flow 2: Main Dashboard for Existing User ---
+    st.header(f"ภาพรวมฟาร์ม")
+    
+    farm_names = [farm['farm_name'] for farm in my_farms]
+    selected_farm_name = st.selectbox("เลือกฟาร์มที่จะจัดการ:", farm_names)
+    selected_farm = next((farm for farm in my_farms if farm['farm_name'] == selected_farm_name), None)
+    selected_farm_id = selected_farm['id']
+
+    # --- Dashboard Metrics ---
+    total_harvests_this_year = supabase.table('harvest_lots').select('id', count='exact').eq('farm_id', selected_farm_id).gte('harvest_date', f'{datetime.now().year}-01-01').execute().count
+    total_activities_this_year = supabase.table('farm_activities').select('id', count='exact').eq('farm_id', selected_farm_id).gte('activity_date', f'{datetime.now().year}-01-01').execute().count
+    last_soil_test = supabase.table('soil_tests').select('test_date').eq('farm_id', selected_farm_id).order('test_date', desc=True).limit(1).execute().data
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("จำนวนการเก็บเกี่ยว (ปีนี้)", f"{total_harvests_this_year or 0} ครั้ง")
+    col2.metric("จำนวนกิจกรรม (ปีนี้)", f"{total_activities_this_year or 0} ครั้ง")
+    col3.metric("ผลตรวจดินล่าสุด", last_soil_test[0]['test_date'] if last_soil_test else "ยังไม่มี")
+
+    st.divider()
+
+    # --- Forms shown in expanders ---
+    st.subheader("บันทึกข้อมูล")
+    with st.expander("🍒 บันทึกการเก็บเกี่ยว"):
+        try:
+            varieties_data = supabase.table('varieties').select('id, name').order('name').execute().data
+            variety_options = {v['name']: v['id'] for v in varieties_data}
+        except Exception as e:
+            st.error(f"ไม่สามารถโหลดข้อมูลสายพันธุ์ได้: {e}")
+            variety_options = {}
+
+        with st.form("add_harvest_form_expander", clear_on_submit=True):
+            harvest_date = st.date_input("วันที่เก็บเกี่ยว")
+            cherry_weight = st.number_input("น้ำหนักกาแฟเชอรี่ (กก.)", min_value=0.0, format="%.2f")
+            selected_variety_name = st.selectbox("สายพันธุ์", options=variety_options.keys())
+            harvester_name = st.text_input("ชื่อผู้เก็บเกี่ยว")
+            if st.form_submit_button("บันทึกการเก็บเกี่ยว", type="primary"):
+                selected_variety_id = variety_options.get(selected_variety_name)
+                supabase.table('harvest_lots').insert({"farm_id": selected_farm_id, "harvest_date": str(harvest_date), "cherry_weight_kg": cherry_weight, "variety_id": selected_variety_id, "harvester_name": harvester_name}).execute()
+                st.success("บันทึกข้อมูลสำเร็จ!")
                 st.rerun()
 
-    st.markdown("---")
+    with st.expander("🌱 บันทึกกิจกรรมในไร่"):
+        activity_categories = {"การจัดการดินและปุ๋ย": ["ใส่ปุ๋ยอินทรีย์", "ใส่ปุ๋ยเคมี", "ปรับปรุงโครงสร้างดิน"], "การจัดการวัชพืช": ["ตัดหญ้าด้วยเครื่อง", "ถางหญ้าด้วยมือ"], "การดูแลรักษาต้นกาแฟ": ["ตัดแต่งกิ่ง", "การให้น้ำ"], "การจัดการสิ่งแวดล้อม": ["เก็บขยะในแปลง", "จัดการของเสีย"]}
+        with st.form("farm_activity_form_expander", clear_on_submit=True):
+            activity_date = st.date_input("วันที่ทำกิจกรรม")
+            category = st.selectbox("หมวดหมู่กิจกรรม", options=activity_categories.keys())
+            activity_type = st.selectbox("ประเภทกิจกรรม", options=activity_categories[category])
+            description = st.text_area("คำอธิบายเพิ่มเติม")
+            if st.form_submit_button("บันทึกกิจกรรม", type="primary"):
+                supabase.table('farm_activities').insert({"farm_id": selected_farm_id, "activity_date": str(activity_date), "activity_category": category, "activity_type": activity_type, "description": description}).execute()
+                st.success("บันทึกกิจกรรมสำเร็จ!")
+                st.rerun()
 
-    # --- Data Table with Filters ---
-    st.subheader("Active Harvest Lots")
+    st.divider()
     
-    filter_tabs = st.tabs(["All", "Ready for Processing", "Processing"])
-    
-    with filter_tabs[0]:
-        # ดึงข้อมูลทั้งหมด
-        harvests_data = supabase.table('harvest_lots').select('*, farms(farm_name), varieties(name)').eq('farms.owner_id', user_id).execute().data
+    # --- Detailed Information in Tabs ---
+    tab1, tab2, tab3 = st.tabs(["🗂️ ประวัติการเก็บเกี่ยว", "📝 ประวัติกิจกรรมและผลดิน", "📄 รายงาน GAP"])
+
+    # (โค้ดใน Tabs เหมือนเดิมทั้งหมด)
+    with tab1:
+        st.subheader("ประวัติการเก็บเกี่ยว")
+        harvests_data = supabase.table('harvest_lots').select('*, varieties(name)').eq('farm_id', selected_farm_id).order('harvest_date', desc=True).execute().data
         if harvests_data:
-            df_harvests = pd.DataFrame(harvests_data)
-            st.dataframe(df_harvests, use_container_width=True)
+            df_harvests = pd.DataFrame(harvests_data).rename(columns={'harvest_date': 'วันที่เก็บเกี่ยว', 'cherry_weight_kg': 'น้ำหนักเชอรี่ (กก.)', 'harvester_name': 'ผู้เก็บเกี่ยว', 'varieties': 'สายพันธุ์'})
+            st.dataframe(df_harvests[['วันที่เก็บเกี่ยว', 'น้ำหนักเชอรี่ (กก.)', 'สายพันธุ์', 'ผู้เก็บเกี่ยว']], use_container_width=True)
         else:
-            st.info("ยังไม่มีประวัติการเก็บเกี่ยว")
-    
-    with filter_tabs[1]:
-        st.info("Filter 'Ready for Processing' is under development.")
+            st.info("ยังไม่มีประวัติการเก็บเกี่ยวสำหรับฟาร์มนี้")
 
-    with filter_tabs[2]:
-        st.info("Filter 'Processing' is under development.")
+    with tab2:
+        st.subheader("ประวัติกิจกรรมและผลตรวจดิน")
+        col1, col2 = st.columns([1,2])
+        with col1:
+            st.write("#### ผลตรวจดินล่าสุด")
+            soil_tests = supabase.table('soil_tests').select('*').eq('farm_id', selected_farm_id).order('test_date', desc=True).execute().data
+            if soil_tests:
+                for test in soil_tests:
+                    with st.expander(f"ผลตรวจวันที่ {test['test_date']}", expanded=(test == soil_tests[0])):
+                        st.write(f"**pH:** {test['ph_level']}")
+                        st.write(f"**N:** {test['nitrogen_ppm']} ppm, **P:** {test['phosphorus_ppm']} ppm, **K:** {test['potassium_ppm']} ppm")
+                        st.write(f"**OM:** {test['organic_matter_percent']}%")
+            else:
+                st.info("ยังไม่มีผลตรวจดิน")
+
+            with st.expander("➕ บันทึกผลตรวจดินใหม่"):
+                 with st.form("soil_test_form", clear_on_submit=True):
+                    test_date = st.date_input("วันที่ส่งตรวจ")
+                    ph = st.number_input("ค่า pH", format="%.2f")
+                    n_val = st.number_input("ไนโตรเจน (ppm)")
+                    p_val = st.number_input("ฟอสฟอรัส (ppm)")
+                    k_val = st.number_input("โพแทสเซียม (ppm)")
+                    om = st.number_input("อินทรียวัตถุ (%)", format="%.2f")
+                    if st.form_submit_button("บันทึกผลตรวจดิน"):
+                        supabase.table('soil_tests').insert({
+                            "farm_id": selected_farm_id, "test_date": str(test_date), "ph_level": ph,
+                            "nitrogen_ppm": n_val, "phosphorus_ppm": p_val, "potassium_ppm": k_val,
+                            "organic_matter_percent": om
+                        }).execute()
+                        st.success("บันทึกผลตรวจดินเรียบร้อย!")
+                        st.rerun()
+        with col2:
+            st.write("#### ประวัติกิจกรรมในไร่")
+            activities = supabase.table('farm_activities').select('*').eq('farm_id', selected_farm_id).order('activity_date', desc=True).execute().data
+            if activities:
+                df_activities = pd.DataFrame(activities).rename(columns={'activity_date': 'วันที่', 'activity_category': 'หมวดหมู่', 'activity_type': 'กิจกรรม', 'description': 'รายละเอียด'})
+                st.dataframe(df_activities[['วันที่', 'หมวดหมู่', 'กิจกรรม', 'รายละเอียด']], use_container_width=True)
+            else:
+                st.info("ยังไม่มีการบันทึกกิจกรรม")
+
+    with tab3:
+        st.subheader("รายงานสรุปตามมาตรฐาน GAP")
+        year_options = list(range(datetime.now().year, datetime.now().year - 5, -1))
+        selected_year = st.selectbox("เลือกปีที่ต้องการสร้างรายงาน", options=year_options)
+        
+        if st.button(f"📄 สร้างตัวอย่างรายงาน GAP สำหรับปี {selected_year}", use_container_width=True):
+            activities_in_year = [a for a in activities if datetime.strptime(a['activity_date'], '%Y-%m-%d').year == selected_year]
+            if not activities_in_year:
+                st.info(f"ไม่พบกิจกรรมที่บันทึกไว้ในปี {selected_year}")
+            else:
+                st.markdown(f"### บันทึกการปฏิบัติทางการเกษตรที่ดี (GAP) - ปี {selected_year}")
+                st.markdown(f"**ฟาร์ม:** {selected_farm_name}")
+                categories = sorted(list(set([a['activity_category'] for a in activities_in_year])))
+                for category in categories:
+                    st.markdown(f"#### {category}")
+                    category_activities = [a for a in activities_in_year if a['activity_category'] == category]
+                    for act in category_activities:
+                        st.markdown(f"- **{act['activity_date']}**: {act['activity_type']} - *{act['description'] or 'ไม่มีคำอธิบาย'}*")
 
 # --- MAIN APP LOGIC ---
 if 'user' not in st.session_state:
