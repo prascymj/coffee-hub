@@ -71,7 +71,6 @@ def admin_dashboard():
         st.dataframe(df_farmers, use_container_width=True)
     else:
         st.info("ยังไม่มีข้อมูลเกษตรกรในระบบ")
-
 def farmer_dashboard():
     try:
         user_id = st.session_state.user.user.id
@@ -114,57 +113,45 @@ def farmer_dashboard():
 
     st.divider()
 
-    # --- Main Action Buttons ---
+    # --- Forms shown in expanders ---
     st.subheader("บันทึกข้อมูล")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🍒 บันทึกการเก็บเกี่ยว", use_container_width=True):
-            st.session_state.show_harvest_form = True
-    with col2:
-        if st.button("🌱 บันทึกกิจกรรมในไร่", use_container_width=True):
-            st.session_state.show_activity_form = True
+    with st.expander("🍒 บันทึกการเก็บเกี่ยว"):
+        try:
+            varieties_data = supabase.table('varieties').select('id, name').order('name').execute().data
+            variety_options = {v['name']: v['id'] for v in varieties_data}
+        except Exception as e:
+            st.error(f"ไม่สามารถโหลดข้อมูลสายพันธุ์ได้: {e}")
+            variety_options = {}
 
-    # --- Forms shown in dialogs for better UX ---
-    if st.session_state.get("show_harvest_form", False):
-        with st.dialog("บันทึกการเก็บเกี่ยว (Harvest Lot)", expanded=True):
-            try:
-                varieties_data = supabase.table('varieties').select('id, name').order('name').execute().data
-                variety_options = {v['name']: v['id'] for v in varieties_data}
-            except Exception as e:
-                st.error(f"ไม่สามารถโหลดข้อมูลสายพันธุ์ได้: {e}")
-                variety_options = {}
+        with st.form("add_harvest_form_expander", clear_on_submit=True):
+            harvest_date = st.date_input("วันที่เก็บเกี่ยว")
+            cherry_weight = st.number_input("น้ำหนักกาแฟเชอรี่ (กก.)", min_value=0.0, format="%.2f")
+            selected_variety_name = st.selectbox("สายพันธุ์", options=variety_options.keys())
+            harvester_name = st.text_input("ชื่อผู้เก็บเกี่ยว")
+            if st.form_submit_button("บันทึกการเก็บเกี่ยว", type="primary"):
+                selected_variety_id = variety_options.get(selected_variety_name)
+                supabase.table('harvest_lots').insert({"farm_id": selected_farm_id, "harvest_date": str(harvest_date), "cherry_weight_kg": cherry_weight, "variety_id": selected_variety_id, "harvester_name": harvester_name}).execute()
+                st.success("บันทึกข้อมูลสำเร็จ!")
+                st.rerun()
 
-            with st.form("add_harvest_form_dialog", clear_on_submit=True):
-                harvest_date = st.date_input("วันที่เก็บเกี่ยว")
-                cherry_weight = st.number_input("น้ำหนักกาแฟเชอรี่ (กก.)", min_value=0.0, format="%.2f")
-                selected_variety_name = st.selectbox("สายพันธุ์", options=variety_options.keys())
-                harvester_name = st.text_input("ชื่อผู้เก็บเกี่ยว")
-                if st.form_submit_button("บันทึก", type="primary"):
-                    selected_variety_id = variety_options.get(selected_variety_name)
-                    supabase.table('harvest_lots').insert({"farm_id": selected_farm_id, "harvest_date": str(harvest_date), "cherry_weight_kg": cherry_weight, "variety_id": selected_variety_id, "harvester_name": harvester_name}).execute()
-                    st.success("บันทึกข้อมูลสำเร็จ!")
-                    st.session_state.show_harvest_form = False
-                    st.rerun()
-
-    if st.session_state.get("show_activity_form", False):
-         with st.dialog("บันทึกกิจกรรมในไร่", expanded=True):
-            activity_categories = {"การจัดการดินและปุ๋ย": ["ใส่ปุ๋ยอินทรีย์", "ใส่ปุ๋ยเคมี", "ปรับปรุงโครงสร้างดิน"], "การจัดการวัชพืช": ["ตัดหญ้าด้วยเครื่อง", "ถางหญ้าด้วยมือ"], "การดูแลรักษาต้นกาแฟ": ["ตัดแต่งกิ่ง", "การให้น้ำ"], "การจัดการสิ่งแวดล้อม": ["เก็บขยะในแปลง", "จัดการของเสีย"]}
-            with st.form("farm_activity_form_dialog", clear_on_submit=True):
-                activity_date = st.date_input("วันที่ทำกิจกรรม")
-                category = st.selectbox("หมวดหมู่กิจกรรม", options=activity_categories.keys())
-                activity_type = st.selectbox("ประเภทกิจกรรม", options=activity_categories[category])
-                description = st.text_area("คำอธิบายเพิ่มเติม")
-                if st.form_submit_button("บันทึก", type="primary"):
-                    supabase.table('farm_activities').insert({"farm_id": selected_farm_id, "activity_date": str(activity_date), "activity_category": category, "activity_type": activity_type, "description": description}).execute()
-                    st.success("บันทึกกิจกรรมสำเร็จ!")
-                    st.session_state.show_activity_form = False
-                    st.rerun()
+    with st.expander("🌱 บันทึกกิจกรรมในไร่"):
+        activity_categories = {"การจัดการดินและปุ๋ย": ["ใส่ปุ๋ยอินทรีย์", "ใส่ปุ๋ยเคมี", "ปรับปรุงโครงสร้างดิน"], "การจัดการวัชพืช": ["ตัดหญ้าด้วยเครื่อง", "ถางหญ้าด้วยมือ"], "การดูแลรักษาต้นกาแฟ": ["ตัดแต่งกิ่ง", "การให้น้ำ"], "การจัดการสิ่งแวดล้อม": ["เก็บขยะในแปลง", "จัดการของเสีย"]}
+        with st.form("farm_activity_form_expander", clear_on_submit=True):
+            activity_date = st.date_input("วันที่ทำกิจกรรม")
+            category = st.selectbox("หมวดหมู่กิจกรรม", options=activity_categories.keys())
+            activity_type = st.selectbox("ประเภทกิจกรรม", options=activity_categories[category])
+            description = st.text_area("คำอธิบายเพิ่มเติม")
+            if st.form_submit_button("บันทึกกิจกรรม", type="primary"):
+                supabase.table('farm_activities').insert({"farm_id": selected_farm_id, "activity_date": str(activity_date), "activity_category": category, "activity_type": activity_type, "description": description}).execute()
+                st.success("บันทึกกิจกรรมสำเร็จ!")
+                st.rerun()
 
     st.divider()
     
     # --- Detailed Information in Tabs ---
     tab1, tab2, tab3 = st.tabs(["🗂️ ประวัติการเก็บเกี่ยว", "📝 ประวัติกิจกรรมและผลดิน", "📄 รายงาน GAP"])
 
+    # (โค้ดใน Tabs เหมือนเดิมทั้งหมด)
     with tab1:
         st.subheader("ประวัติการเก็บเกี่ยว")
         harvests_data = supabase.table('harvest_lots').select('*, varieties(name)').eq('farm_id', selected_farm_id).order('harvest_date', desc=True).execute().data
@@ -193,13 +180,16 @@ def farmer_dashboard():
                  with st.form("soil_test_form", clear_on_submit=True):
                     test_date = st.date_input("วันที่ส่งตรวจ")
                     ph = st.number_input("ค่า pH", format="%.2f")
-                    n, p, k = st.columns(3)
-                    n.number_input("ไนโตรเจน (ppm)")
-                    p.number_input("ฟอสฟอรัส (ppm)")
-                    k.number_input("โพแทสเซียม (ppm)")
+                    n_val = st.number_input("ไนโตรเจน (ppm)")
+                    p_val = st.number_input("ฟอสฟอรัส (ppm)")
+                    k_val = st.number_input("โพแทสเซียม (ppm)")
                     om = st.number_input("อินทรียวัตถุ (%)", format="%.2f")
                     if st.form_submit_button("บันทึกผลตรวจดิน"):
-                        # (ใส่โค้ด INSERT ที่นี่)
+                        supabase.table('soil_tests').insert({
+                            "farm_id": selected_farm_id, "test_date": str(test_date), "ph_level": ph,
+                            "nitrogen_ppm": n_val, "phosphorus_ppm": p_val, "potassium_ppm": k_val,
+                            "organic_matter_percent": om
+                        }).execute()
                         st.success("บันทึกผลตรวจดินเรียบร้อย!")
                         st.rerun()
         with col2:
@@ -217,19 +207,18 @@ def farmer_dashboard():
         selected_year = st.selectbox("เลือกปีที่ต้องการสร้างรายงาน", options=year_options)
         
         if st.button(f"📄 สร้างตัวอย่างรายงาน GAP สำหรับปี {selected_year}", use_container_width=True):
-            st.markdown(f"### บันทึกการปฏิบัติทางการเกษตรที่ดี (GAP) - ปี {selected_year}")
-            st.markdown(f"**ฟาร์ม:** {selected_farm_name}")
             activities_in_year = [a for a in activities if datetime.strptime(a['activity_date'], '%Y-%m-%d').year == selected_year]
             if not activities_in_year:
                 st.info(f"ไม่พบกิจกรรมที่บันทึกไว้ในปี {selected_year}")
             else:
+                st.markdown(f"### บันทึกการปฏิบัติทางการเกษตรที่ดี (GAP) - ปี {selected_year}")
+                st.markdown(f"**ฟาร์ม:** {selected_farm_name}")
                 categories = sorted(list(set([a['activity_category'] for a in activities_in_year])))
                 for category in categories:
                     st.markdown(f"#### {category}")
                     category_activities = [a for a in activities_in_year if a['activity_category'] == category]
                     for act in category_activities:
                         st.markdown(f"- **{act['activity_date']}**: {act['activity_type']} - *{act['description'] or 'ไม่มีคำอธิบาย'}*")
-
 
 # --- MAIN APP LOGIC ---
 if 'user' not in st.session_state:
